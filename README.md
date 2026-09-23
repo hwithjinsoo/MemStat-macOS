@@ -80,6 +80,6 @@ Xcode로 Run만 해두면 Xcode를 끌 때 위젯도 같이 사라집니다. 로
 
 ## 참고
 
-- 메모리 수치는 `active + wired + compressed` 페이지 기준 근사치이며, Activity Monitor(활성 상태 보기)와 완전히 동일한 계산식은 아닙니다.
+- 메모리 수치는 `(internal - purgeable) + wired + compressed` 페이지 기준으로 계산하며, Activity Monitor(활성 상태 보기)의 "메모리 사용량"과 같은 방식입니다. 다만 Apple이 정확한 내부 공식을 전부 공개하지는 않아서 100% 동일하지는 않을 수 있습니다.
 - 최다 메모리 사용 앱 계산은 `proc_pidinfo`로 읽을 수 있는 프로세스 범위 내에서만 동작하며, 일부 시스템 보호 프로세스는 권한 문제로 집계에서 제외될 수 있습니다.
 - 모든 데이터는 로컬(App Group 공유 저장소)에서만 처리되며, 외부로 전송되지 않습니다.

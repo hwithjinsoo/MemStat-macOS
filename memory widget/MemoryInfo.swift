@@ -3,10 +3,13 @@
 //  MemoryWidget
 //
 //  host_statistics64로 시스템 메모리 사용량을 읽어온다.
-//  Activity Monitor의 "메모리 사용량"과 완전히 동일한 값은 아니고
-//  (active + wired + compressed 기준) 근사치임 — Activity Monitor는
-//  내부적으로 조금 더 복잡한 계산을 쓰기 때문. 실시간 위젯 용도로는
-//  이 정도 근사치면 충분함.
+//  Activity Monitor의 "메모리 사용량"과 동일한 방식으로 계산:
+//  (internal_page_count - purgeable_count) + wire_count + compressor_page_count
+//
+//  internal_page_count - purgeable_count = "App Memory" (앱이 실제로 물고 있는
+//  익명 페이지에서, 커널이 언제든 즉시 회수 가능한 purgeable 페이지는 제외).
+//  단순히 active_count를 쓰면 재사용 가능한 파일 캐시(external page)까지
+//  "사용 중"으로 잡혀서 Activity Monitor보다 높게 나오는 문제가 있었음.
 //
 
 import Foundation
@@ -38,11 +41,14 @@ func fetchMemoryInfo() -> MemoryInfo {
     let pageSize = UInt64(vm_kernel_page_size)
     let totalBytes = ProcessInfo.processInfo.physicalMemory
 
-    // Activity Monitor의 "사용 중" 항목과 비슷하게: active + wired + compressed
-    let activeBytes = UInt64(stats.active_count) * pageSize
+    // Activity Monitor 방식: App Memory(internal - purgeable) + Wired + Compressed
+    let internalBytes = UInt64(stats.internal_page_count) * pageSize
+    let purgeableBytes = UInt64(stats.purgeable_count) * pageSize
+    let appBytes = internalBytes > purgeableBytes ? internalBytes - purgeableBytes : 0
+
     let wiredBytes = UInt64(stats.wire_count) * pageSize
     let compressedBytes = UInt64(stats.compressor_page_count) * pageSize
-    let usedBytes = activeBytes + wiredBytes + compressedBytes
+    let usedBytes = appBytes + wiredBytes + compressedBytes
 
     let gb = 1_073_741_824.0
     let usedGB = Double(usedBytes) / gb
