@@ -2,7 +2,6 @@
 //  ContentView.swift
 //  MemoryWidgetHelper
 //
-//  Created by 안준혁 on 9/22/26.
 //
 
 import SwiftUI

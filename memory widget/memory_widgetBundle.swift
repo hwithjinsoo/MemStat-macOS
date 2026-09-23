@@ -2,7 +2,6 @@
 //  memory_widgetBundle.swift
 //  memory widget
 //
-//  Created by 안준혁 on 9/22/26.
 //
 
 import WidgetKit
