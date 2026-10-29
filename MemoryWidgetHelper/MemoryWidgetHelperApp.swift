@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults(suiteName: groupID)
         defaults?.set(info.name, forKey: "topProcessName")
         defaults?.set(info.memoryMB, forKey: "topProcessMemoryMB")
+        // 위젯이 헬퍼가 멈췄는지(값이 오래됐는지) 알 수 있게 기록 시각도 남긴다.
+        defaults?.set(Date().timeIntervalSince1970, forKey: "topProcessUpdatedAt")
     }
-    
-    
 }

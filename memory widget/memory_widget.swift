@@ -14,24 +14,35 @@ struct MemoryEntry: TimelineEntry {
     let info: MemoryInfo
     let topProcessName: String?
     let topProcessMemoryMB: Double?
+    let topProcessUpdatedAt: Date?
+
+    /// 헬퍼가 꺼졌거나(서명 만료로 실행 실패 등) 멈춰서 톱 프로세스 값이 오래된 상태
+    var isTopProcessStale: Bool {
+        guard let updatedAt = topProcessUpdatedAt else { return true }
+        return date.timeIntervalSince(updatedAt) > sharedTopProcessStaleInterval
+    }
 }
 
 // MARK: - Timeline Provider
 
 struct MemoryProvider: TimelineProvider {
     func placeholder(in context: Context) -> MemoryEntry {
-        MemoryEntry(date: Date(), info: .placeholder, topProcessName: "예시앱", topProcessMemoryMB: 512)
+        MemoryEntry(date: Date(), info: .placeholder, topProcessName: "예시앱", topProcessMemoryMB: 512, topProcessUpdatedAt: Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (MemoryEntry) -> Void) {
+        completion(makeEntry(at: Date()))
+    }
+
+    private func makeEntry(at date: Date) -> MemoryEntry {
         let top = fetchSharedTopProcess()
-        completion(MemoryEntry(date: Date(), info: fetchMemoryInfo(), topProcessName: top?.name, topProcessMemoryMB: top?.memoryMB))
+        return MemoryEntry(date: date, info: fetchMemoryInfo(), topProcessName: top?.name,
+                           topProcessMemoryMB: top?.memoryMB, topProcessUpdatedAt: top?.updatedAt)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<MemoryEntry>) -> Void) {
         let now = Date()
-        let top = fetchSharedTopProcess()
-        let entry = MemoryEntry(date: now, info: fetchMemoryInfo(), topProcessName: top?.name, topProcessMemoryMB: top?.memoryMB)
+        let entry = makeEntry(at: now)
 
         // 30초마다 갱신 (헬퍼는 5초마다 값 갱신, 위젯은 30초마다 그 값을 읽어감)
         let nextRefresh = Calendar.current.date(byAdding: .second, value: 30, to: now)!
@@ -62,6 +73,10 @@ struct MemoryWidgetEntryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                // 위젯이 마지막으로 값을 읽은 시각 (WidgetKit이 갱신을 미루면 여기서 티가 남)
+                Text(entry.date, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
             Text(String(format: "%.1f GB", entry.info.usedGB))
@@ -78,7 +93,18 @@ struct MemoryWidgetEntryView: View {
                 .font(.caption2.bold())
                 .foregroundStyle(barColor)
 
-            if let topName = entry.topProcessName {
+            if entry.topProcessName != nil && entry.isTopProcessStale {
+                Divider()
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    Text("헬퍼 응답 없음")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            } else if let topName = entry.topProcessName {
                 Divider()
                 HStack(spacing: 4) {
                     Image(systemName: "arrowtriangle.up.fill")
@@ -126,5 +152,5 @@ struct MemoryWidget: Widget {
 #Preview(as: .systemSmall) {
     MemoryWidget()
 } timeline: {
-    MemoryEntry(date: .now, info: .placeholder, topProcessName: "예시앱", topProcessMemoryMB: 512)
+    MemoryEntry(date: .now, info: .placeholder, topProcessName: "예시앱", topProcessMemoryMB: 512, topProcessUpdatedAt: .now)
 }
