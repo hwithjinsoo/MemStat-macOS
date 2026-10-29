@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.jin.memorywidget.rebuild</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<!-- __HOME__은 설치할 때 README의 sed 명령으로 본인 홈 경로로 바뀜 -->
+		<string>__HOME__/Library/Scripts/memstat-rebuild.sh</string>
+	</array>
+	<!-- 로그인(재부팅) 직후 한 번 -->
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- 매일 12:00 (그 시각에 잠자기였으면 깨어난 뒤 실행) -->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>12</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

@@ -7,7 +7,8 @@ macOS 데스크탑에 실시간 메모리 사용량과, 지금 메모리를 가�
 - 사용 중인 메모리(GB) / 전체 메모리 / 사용률(%)을 색상 게이지와 함께 표시 (70% 미만 초록, 70~85% 주황, 85% 이상 빨강)
 - 지금 메모리를 가장 많이 쓰고 있는 앱을 표시 (개별 프로세스가 아니라 같은 앱에 속한 프로세스끼리 합산해서 계산 — 예: 크롬 렌더러 여러 개를 "Google Chrome" 하나로 합산)
 - small / medium 두 가지 위젯 크기 지원
-- 30초 주기로 자동 갱신
+- 30초 주기로 갱신 요청 (실제 갱신 간격은 WidgetKit이 정해서 더 길어질 수 있음 — 위젯 오른쪽 위에 마지막 갱신 시각 표시)
+- 헬퍼가 멈추면(1분 넘게 값이 안 바뀌면) 위젯에 "헬퍼 응답 없음" 표시
 
 ## 구성
 
@@ -78,8 +79,108 @@ Xcode로 Run만 해두면 Xcode를 끌 때 위젯도 같이 사라집니다. 로
 
 이후 코드를 다시 수정하면, 다시 빌드한 결과물을 `/Applications`에 덮어써야 반영됩니다 (Xcode에서 Run만 해서는 이미 설치된 앱에 반영 안 됨).
 
+## 무료 계정 7일 만료 대응 (자동 재빌드)
+
+무료 Apple ID(Personal Team)로 서명하면 프로비저닝 프로파일이 **7일마다 만료**됩니다. 만료된 뒤에도 이미 실행 중인 앱은 계속 돌지만, **재부팅하면 헬퍼와 위젯이 실행되지 않아서** 메모리 추적이 멈춥니다. 이때 위젯은 마지막 값에서 멈춰 있고, 헬퍼 쪽 줄에 "헬퍼 응답 없음"이 뜹니다.
+
+만료된 앱을 직접 실행하면 이런 에러가 납니다.
+
+```
+Launchd job spawn failed (POSIX error 163)
+```
+
+다시 빌드해서 `/Applications`에 덮어쓰면 7일이 새로 생깁니다. `scripts/auto-rebuild/`의 스크립트를 설치하면 이 과정이 자동으로 됩니다.
+
+- 로그인할 때 + 매일 12시에 설치된 앱의 만료일을 확인
+- 만료 2일 전부터(또는 이미 만료됐으면) 명령줄로 다시 빌드 → `/Applications`의 앱 교체 → 헬퍼 재시작
+- 아직 여유가 있으면 아무것도 안 함
+- Team ID는 빌드 명령의 인자로만 넘기므로 프로젝트 파일은 바뀌지 않음
+
+### 설치
+
+먼저 위 "정식 설치"를 한 번 끝내서 `/Applications`에 앱이 있는 상태여야 합니다.
+
+**1. 본인 Team ID 확인** (10자리 영문+숫자)
+
+```
+codesign -dv /Applications/MemoryWidgetHelper.app 2>&1 | grep TeamIdentifier
+```
+
+**2. 스크립트 복사 후 설정 채우기**
+
+```
+mkdir -p ~/Library/Scripts
+cp scripts/auto-rebuild/memstat-rebuild.sh ~/Library/Scripts/
+chmod +x ~/Library/Scripts/memstat-rebuild.sh
+open -e ~/Library/Scripts/memstat-rebuild.sh
+```
+
+열린 파일 맨 위의 두 줄을 본인 값으로 바꿉니다.
+
+```
+REPO="/path/to/public-memory-widget"   # 이 저장소를 클론한 절대 경로
+TEAM_ID="YOUR_TEAM_ID"                 # 1번에서 확인한 값
+```
+
+> ⚠️ Team ID가 들어간 이 복사본은 저장소 밖(`~/Library/Scripts`)에 두고 커밋하지 마세요.
+
+**3. 동작 확인**
+
+```
+~/Library/Scripts/memstat-rebuild.sh --force
+tail ~/Library/Logs/memstat-rebuild.log
+```
+
+로그 마지막에 `교체 완료. 새 만료: ...`가 나오면 성공입니다. 빌드 중에 키체인 비밀번호 창이 뜨면 아래 "빌드할 때마다 비밀번호 창이 뜰 때"를 먼저 처리하세요. 자동 실행 중에는 창에 답할 사람이 없어서 빌드가 멈춥니다.
+
+**4. 자동 실행 등록**
+
+```
+sed "s|__HOME__|$HOME|" scripts/auto-rebuild/com.jin.memorywidget.rebuild.plist > ~/Library/LaunchAgents/com.jin.memorywidget.rebuild.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jin.memorywidget.rebuild.plist
+```
+
+등록하자마자 한 번 실행됩니다. "백그라운드 항목이 추가됨" 알림이 뜰 수 있는데 정상입니다. 등록됐는지는 이렇게 확인합니다.
+
+```
+launchctl print gui/$(id -u)/com.jin.memorywidget.rebuild | grep -E "runs|last exit code"
+```
+
+**해제하려면**
+
+```
+launchctl bootout gui/$(id -u)/com.jin.memorywidget.rebuild
+rm ~/Library/LaunchAgents/com.jin.memorywidget.rebuild.plist
+```
+
+### 주의할 점
+
+- Xcode → Settings → Accounts에 Apple ID 로그인이 유지돼 있어야 새 프로파일을 받아올 수 있습니다.
+- 스크립트는 저장소 폴더의 **현재 코드**로 빌드합니다. 커밋하지 않은 수정이 있으면 그것도 같이 설치됩니다.
+- 빌드가 실패하면 원인이 `~/Library/Logs/memstat-rebuild.log`에 남습니다. 전체 빌드 로그는 `~/Library/Caches/memstat-rebuild/last-build-<스킴>.log`에 있습니다.
+
+### 빌드할 때마다 비밀번호 창이 뜰 때
+
+"codesign이(가) 키체인의 키를 사용하려고 합니다" 같은 창이 빌드마다 뜨고, **"항상 허용"을 눌러도 계속 뜨는** 경우입니다. 서명 키의 partition 목록에 Apple 도구(`apple:`)가 빠져 있어서 생기는 문제이고, "항상 허용"으로는 이 목록이 바뀌지 않습니다.
+
+터미널 앱에서 `security set-key-partition-list` 명령으로 고칠 수 있는데, **이 명령은 로그인 키체인의 모든 개인 키에 적용됩니다.** (`-D`, `-l` 같은 조건으로 키를 골라내는 게 기대대로 동작하지 않을 수 있음) 그래서 다른 앱 키가 쓰던 기존 값을 먼저 확인해서 같이 넣어야 합니다.
+
+**1. 지금 쓰이고 있는 partition 값 확인**
+
+```
+security dump-keychain -a ~/Library/Keychains/login.keychain-db | grep -A1 partition_id | grep description | sort -u
+```
+
+**2. 나온 `teamid:XXXXXXXXXX` 값을 전부 `-S` 뒤에 쉼표로 이어서 실행** (로그인 비밀번호를 물어봄)
+
+```
+security set-key-partition-list -S apple-tool:,apple:,teamid:XXXXXXXXXX,teamid:YYYYYYYYYY -s -t private ~/Library/Keychains/login.keychain-db
+```
+
+기존 값을 빠뜨리면 해당 앱(예: 게임 런처의 로그인 키)이 실행될 때 비밀번호 창이 뜰 수 있습니다. 그때는 빠진 값을 넣어서 2번을 다시 실행하면 됩니다.
+
 ## 참고
 
 - 메모리 수치는 `(internal - purgeable) + wired + compressed` 페이지 기준으로 계산하며, Activity Monitor(활성 상태 보기)의 "메모리 사용량"과 같은 방식입니다. 다만 Apple이 정확한 내부 공식을 전부 공개하지는 않아서 100% 동일하지는 않을 수 있습니다.
-- 최다 메모리 사용 앱 계산은 `proc_pidinfo`로 읽을 수 있는 프로세스 범위 내에서만 동작하며, 일부 시스템 보호 프로세스는 권한 문제로 집계에서 제외될 수 있습니다.
+- 최다 메모리 사용 앱은 Activity Monitor의 "메모리" 열과 같은 `phys_footprint`(`proc_pid_rusage`) 기준으로 계산합니다. 권한 때문에 다른 사용자나 root가 소유한 프로세스(`kernel_task` 등)는 읽을 수 없어서 집계에서 빠집니다.
 - 모든 데이터는 로컬(App Group 공유 저장소)에서만 처리되며, 외부로 전송되지 않습니다.
